@@ -58,8 +58,6 @@ func returnSingleUser(w http.ResponseWriter, r *http.Request) {
 
 func createNewUser(w http.ResponseWriter, r *http.Request) {
   fmt.Println("createNewUser")
-  fmt.Println(r)
-
 
   reqBody, _ := ioutil.ReadAll(r.Body)
 
@@ -92,42 +90,80 @@ func getAllMessage(w http.ResponseWriter, r *http.Request) {
 
 }
 
-func message(w http.ResponseWriter, r *http.Request) {
-  fmt.Println("message...")
-  r.ParseForm()
-  // fmt.Println(r)
-  // fmt.Println(r.ParseForm())
-  fmt.Printf("MESSAGE => %s\n", r.FormValue("message"))
-  // This is working, but I honestly don't understand how the `json.Unmarshal` works.
-  // TODO: learn excactly what json.Unmarshal does/mean.
-
-
-  reqBody, _ := ioutil.ReadAll(r.Body)
-  type MessageReq struct {
-    UserA string `json:"UserA"`
-    UserB string `json:"UserB"`
-    Text string `json:"message"`
-  }
-  var message MessageReq
-  json.Unmarshal(reqBody, &message)
-  json.NewEncoder(w).Encode(message)
-
-
-  // foo := reqBody["id_a"]
-  fmt.Println(message)
-
+func getUserMessages(w http.ResponseWriter, r *http.Request) {
+  fmt.Println("Endpoint Hit: getUserMessages")
   vars := mux.Vars(r)
-  fmt.Println(vars)
-  userA := vars["id_a"]
-  userB := vars["id_b"]
-  // message := vars["message"]
+  key := vars["id"]
 
-  fmt.Printf("userA %#v\n", userA)
-  fmt.Printf("userB %#v\n", userB)
-  fmt.Printf("message %#v\n", message)
-  // fmt.Println()
-  // fmt.Println("userB", userB)
-  // fmt.Println("message", message)
+  var userMessages []string
+
+  for _, user := range Users {
+    if user.Id == key {
+      for _, messageId := range user.Messages {
+        var message = getMessages(messageId)
+        userMessages = append(userMessages, message...)
+      }
+    }
+  }
+
+  json.NewEncoder(w).Encode(userMessages)
+}
+
+func getMessages(messageId string) []string {
+  for _, message := range Messages {
+    if message.Id == messageId {
+      return message.Messages
+    }
+  }
+  return nil
+}
+
+// TODO: this function is very sloopy. There should be a cleaner soluntion to finding the "messages" between two users.
+func message(w http.ResponseWriter, r *http.Request) {
+  type MessageReq struct {
+    UserA string
+    UserB string
+    Message string
+  }
+  var messageReq MessageReq
+
+  // parse the req into a struct
+  err := json.NewDecoder(r.Body).Decode(&messageReq)
+  if err != nil {
+      http.Error(w, err.Error(), http.StatusBadRequest)
+      return
+  }
+  // fmt.Fprintf(w, "Person: %+v", message)
+
+  fmt.Println(messageReq)
+  fmt.Println(messageReq.UserA)
+
+
+  // first, find UserA
+  for _, user := range Users {
+    if user.Id == messageReq.UserA {
+      // Next check if UserB is in UserA's message history
+      for recipientId, messageId := range user.Messages {
+        fmt.Println(recipientId)
+        fmt.Println(messageReq.UserB)
+        if recipientId == messageReq.UserB {
+          fmt.Println("they are equal!")
+          // simply append the new message to the list
+          appendMessage(messageId, messageReq.Message)
+          break
+        }
+      }
+    }
+  }
+}
+
+// TODO: this should handle errors
+func appendMessage(key string, m string)  {
+  for idx, message := range Messages {
+    if message.Id == key {
+      Messages[idx].Messages = append(message.Messages, m)
+    }
+  }
 }
 
 
@@ -143,7 +179,7 @@ func handleRequests() {
   myRouter.HandleFunc("/message", message).Methods("PUT")
   myRouter.HandleFunc("/message", getAllMessage)
   myRouter.HandleFunc("/message/all", getAllMessage)
-  myRouter.HandleFunc("/message/{id}", getAllMessage)
+  myRouter.HandleFunc("/message/{id}", getUserMessages)
 
   log.Fatal(http.ListenAndServe(":10000", myRouter))
 }
@@ -182,11 +218,11 @@ func handleDB()  {
 func main() {
   fmt.Println("Rest API v2.0 - Mux Routers")
   Users = []User{
-    User{Id: "1", FirstName: "Nico", LastName: "Pampe"},
-    User{Id: "2", FirstName: "Bilbo", LastName: "Baggins"},
+    User{Id: "1", FirstName: "Nico", LastName: "Pampe", Messages: map[string]string{"2":"abc"}},
+    User{Id: "2", FirstName: "Bilbo", LastName: "Baggins", Messages: map[string]string{"1":"abc"}},
   }
   Messages = []Message{
-    Message{Id: "1", Messages: []string{"Hello bilbo!", "Hello Nico! Have you seen my precious", "I'm afraid not"} },
+    Message{Id: "abc", Messages: []string{"Hello bilbo!", "Hello Nico! Have you seen my precious", "I'm afraid not"} },
   }
   handleDB()
   handleRequests()
